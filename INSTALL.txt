@@ -1,0 +1,7 @@
+For Windows users:
+
+First, run premake-mingw.bat
+Then, get w64devkit, go into your project folder and type 'make'.
+Enjoy :)
+
+If the example program quits then you didn't point to a valid soundfont and MIDI file.
