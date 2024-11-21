@@ -15,7 +15,7 @@
 
    LICENSE (ZLIB)
 
-   Copyright (C) 2017, 2018, 2020 Bernhard Schelling
+   Copyright (C) 2017, 2018 Bernhard Schelling
 
    This software is provided 'as-is', without any express or implied
    warranty.  In no event will the authors be held liable for any damages
@@ -88,24 +88,13 @@ typedef struct tml_message
 	// - pitch_bend for TML_PITCH_BEND messages
 	union
 	{
-		#ifdef _MSC_VER
-		#pragma warning(push)
-		#pragma warning(disable:4201) //nonstandard extension used: nameless struct/union
-		#elif defined(__GNUC__)
-		#pragma GCC diagnostic push
-		#pragma GCC diagnostic ignored "-Wpedantic" //ISO C++ prohibits anonymous structs
-		#endif
-
 		struct { union { char key, control, program, channel_pressure; }; union { char velocity, key_pressure, control_value; }; };
 		struct { unsigned short pitch_bend; };
-
-		#ifdef _MSC_VER
-		#pragma warning( pop )
-		#elif defined(__GNUC__)
-		#pragma GCC diagnostic pop
-		#endif
 	};
-
+  
+	//extra
+	int trackNum;
+    char* markerName;
 	// The pointer to the next message in time following this event
 	struct tml_message* next;
 } tml_message;
@@ -152,10 +141,7 @@ struct tml_stream
 
 // Generic Midi loading method using the stream structure above
 TMLDEF tml_message* tml_load(struct tml_stream* stream);
-
-// If this library is used together with TinySoundFont, tsf_stream (equivalent to tml_stream) can also be used
-struct tsf_stream;
-TMLDEF tml_message* tml_load_tsf_stream(struct tsf_stream* stream);
+//TMLDEF tml_message* tml_load_tsf_stream(struct tsf_stream* stream);
 
 #ifdef __cplusplus
 }
@@ -281,7 +267,7 @@ static int tml_readvariablelength(struct tml_parser* p)
 	TML_WARN("Invalid variable length byte count"); return -1;
 }
 
-static int tml_parsemessage(tml_message** f, struct tml_parser* p)
+static int tml_parsemessage(tml_message** f, struct tml_parser* p, int tNum)
 {
 	int deltatime = tml_readvariablelength(p), status = tml_readbyte(p);
 	tml_message* evt;
@@ -336,30 +322,37 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 				((struct tml_tempomsg*)evt)->Tempo[1] = metadata[1];
 				((struct tml_tempomsg*)evt)->Tempo[2] = metadata[2];
 				break;
-
+			case TML_MARKER:
+				if (buflen == 0) { TML_WARN("Invalid length for Marker event"); return -1; }
+				evt->type = TML_MARKER;
+				evt->markerName = (char*)malloc(buflen + 1);
+				memcpy(evt->markerName, metadata, buflen);
+				evt->markerName[buflen] = '\0';
+				break;
 			default:
 				evt->type = 0;
 		}
 	}
 	else //channel message
 	{
-		int param; 
-		if ((param = tml_readbyte(p)) < 0) { TML_WARN("Unexpected end of file"); return -1; }
-		evt->key = (param & 0x7f);
+		int param1=0, param2=0;
+		if ((param1 = tml_readbyte(p)) < 0) { TML_WARN("Unexpected end of file"); return -1; }
+		evt->key = (param1 & 0x7f);
 		evt->channel = (status & 0x0f);
+		
 		switch (evt->type = (status & 0xf0))
 		{
 			case TML_NOTE_OFF:
 			case TML_NOTE_ON:
 			case TML_KEY_PRESSURE:
 			case TML_CONTROL_CHANGE:
-				if ((param = tml_readbyte(p)) < 0) { TML_WARN("Unexpected end of file"); return -1; }
-				evt->velocity = (param & 0x7f);
+				if ((param2 = tml_readbyte(p)) < 0) { TML_WARN("Unexpected end of file"); return -1; }
+				evt->velocity = (param2 & 0x7f);
 				break;
 
 			case TML_PITCH_BEND:
-				if ((param = tml_readbyte(p)) < 0) { TML_WARN("Unexpected end of file"); return -1; }
-				evt->pitch_bend = ((param & 0x7f) << 7) | evt->key;
+				if ((param2 = tml_readbyte(p)) < 0) { TML_WARN("Unexpected end of file"); return -1; }
+				evt->pitch_bend = ((param2 & 0x7f) << 7) | evt->key;
 				break;
 
 			case TML_PROGRAM_CHANGE:
@@ -371,6 +364,8 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 				evt->type = 0;
 				break;
 		}
+		
+    evt->trackNum = tNum;
 	}
 
 	if (deltatime || evt->type)
@@ -404,6 +399,7 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 	for (t = tracks; t != tracksEnd; t++) t->Idx = t->End = t->Ticks = 0;
 
 	// Read all messages for all tracks
+  int tNum = 0;
 	for (t = tracks; t != tracksEnd; t++)
 	{
 		unsigned char track_header[8];
@@ -421,9 +417,10 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 		t->Idx = p.message_count;
 		for (p.buf_end = (p.buf = trackbuf) + track_length; p.buf != p.buf_end;)
 		{
-			int type = tml_parsemessage(&messages, &p);
+			int type = tml_parsemessage(&messages, &p, tNum);
 			if (type == TML_EOT || type < 0) break; //file end or illegal data encountered
 		}
+    tNum++;
 		if (p.buf != p.buf_end) { TML_WARN( "Track length did not match data length"); }
 		t->End = p.message_count;
 	}
@@ -483,10 +480,12 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 	return messages;
 }
 
+/*
 TMLDEF tml_message* tml_load_tsf_stream(struct tsf_stream* stream)
 {
 	return tml_load((struct tml_stream*)stream);
 }
+*/
 
 TMLDEF int tml_get_info(tml_message* Msg, int* out_used_channels, int* out_used_programs, int* out_total_notes, unsigned int* out_time_first_note, unsigned int* out_time_length)
 {
