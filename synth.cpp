@@ -284,3 +284,16 @@ bool Synth::HasFileEnded()
 	else
 	{return false;}
 }
+
+void Synth::SetChannelPan(char pan, char channel)
+{
+	float customChannelPan = pan / 128.0f;
+	tsf_channel_set_pan(g_TinySoundFont, channel, customChannelPan);
+}
+
+void Synth::SetMasterPan(char pan)
+{
+	float customMasterPan = pan / 128.0f;	
+	for(char c=0;c<16;c++)
+			tsf_channel_set_pan(g_TinySoundFont, c, customMasterPan);
+}

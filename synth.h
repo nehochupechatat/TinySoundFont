@@ -31,6 +31,8 @@ class Synth
 		void SetMasterVolume(unsigned char volume);
 		void SetMasterPitch(unsigned short pitch, char pitchRange);
 		bool HasFileEnded();
+		void SetChannelPan(char pan, char channel);
+		void SetMasterPan(char pan);
     private:
         const char *filename;
 		short loopCount;
