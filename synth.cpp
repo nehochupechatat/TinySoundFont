@@ -5,8 +5,6 @@
 #define TML_IMPLEMENTATION
 #include "tml.h"
 
-#include "minisdl_audio.h"
-
 #include <iostream>
 #include <cstring>
 
@@ -24,15 +22,22 @@ int CaseStrCmp(const char* str1, const char* str2)
     return *str1 - *str2;
 }
 
-void Synth::AudioCallbackStatic(void* userdata, unsigned char* stream, int len)
+void Synth::AudioCallbackStatic(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
 {
-    Synth* synth = static_cast<Synth*>(userdata);  // Cast the userdata back to the Synth instance
-    synth->AudioCallback(userdata, stream, len);   // Call the actual instance method
+    // Access the Synth instance from user data
+    Synth* synth = static_cast<Synth*>(pDevice->pUserData);
+    synth->AudioCallback(pDevice, pOutput, frameCount);
 }
 		
 // Callback function called by the audio thread
-void Synth::AudioCallback(void* data, unsigned char *stream, int len)
+void Synth::AudioCallback(ma_device* pDevice, void* pOutput, ma_uint32 frameCount)
 {
+	ma_format format = pDevice->playback.format;
+    ma_uint32 channels = pDevice->playback.channels;
+    ma_uint32 bytesPerSample = ma_get_bytes_per_sample(format);
+    ma_uint32 len = frameCount * channels * bytesPerSample;
+	unsigned char* stream = static_cast<unsigned char*>(pOutput);
+
 	//Number of samples to process
 	int SampleBlock, SampleCount = (len / (2 * sizeof(float))); //2 output channels
 	for (SampleBlock = TSF_RENDER_EFFECTSAMPLEBLOCK; SampleCount; SampleCount -= SampleBlock, stream += (SampleBlock * (2 * sizeof(float))))
@@ -125,26 +130,25 @@ void Synth::AudioCallback(void* data, unsigned char *stream, int len)
 Synth::Synth(const char *fName):filename(fName),loops(0),loopCount(0), g_MidiMessage(nullptr), g_Msec(0.0), g_TinySoundFont(nullptr)
 {
 	// Define the desired audio output format we request
-	SDL_AudioSpec OutputAudioSpec;
-	OutputAudioSpec.freq = 44100;
-	OutputAudioSpec.format = AUDIO_F32;
-	OutputAudioSpec.channels = 2;
-	OutputAudioSpec.samples = 4096;
-	OutputAudioSpec.callback = AudioCallbackStatic;
-	OutputAudioSpec.userdata = this;
+	deviceConfig = ma_device_config_init(ma_device_type_playback);
+	deviceConfig.sampleRate = 44100;
+	deviceConfig.playback.format = ma_format_f32;
+	deviceConfig.playback.channels = 2;
+	deviceConfig.dataCallback = AudioCallbackStatic;
+	deviceConfig.pUserData = this;
 	currentTempo = 1000000;
-	// Initialize the audio system
-	SDL_AudioInit(TSF_NULL);
+
+
 	loopStartPosition = 0.0f;
 	g_TinySoundFont = tsf_load_filename(fName);
 	//Initialize preset on special 10th MIDI channel to use percussion sound bank (128) if available
 	tsf_channel_set_bank_preset(g_TinySoundFont, 9, 128, 0);
 
 	// Set the SoundFont rendering output mode
-	tsf_set_output(g_TinySoundFont, TSF_STEREO_INTERLEAVED, OutputAudioSpec.freq, 0.0f);
+	tsf_set_output(g_TinySoundFont, TSF_STEREO_INTERLEAVED, deviceConfig.sampleRate, 0.0f);
 
 	// Request the desired audio output format
-	SDL_OpenAudio(&OutputAudioSpec, TSF_NULL);
+	ma_device_init(TSF_NULL, &deviceConfig, &device);
 	
 }
 
@@ -152,7 +156,6 @@ Synth::~Synth()
 {
 	tsf_close(g_TinySoundFont);
 	tml_free(TinyMidiLoader);
-	SDL_CloseAudio();
 }
 
 void Synth::PlaySong(const char *filename, short loops)
@@ -162,8 +165,7 @@ void Synth::PlaySong(const char *filename, short loops)
 	TinyMidiLoader = tml_load_filename(filename);
 	g_MidiMessage = TinyMidiLoader;
 	loopStartPositionMessage = g_MidiMessage;
-    // Check if we have reached the end of the MIDI sequence
-	SDL_PauseAudio(0);
+	ma_device_start(&device);
 
 }
 

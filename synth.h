@@ -3,6 +3,7 @@ struct tml_message;
 struct tsf;
 #include <set>
 #include "stdio.h"
+#include "miniaudio.h"
 
 int CaseStrCmp(const char* str1, const char* str2);
 
@@ -11,8 +12,8 @@ class Synth
     public:
         Synth(const char *filename);
         ~Synth();
-		static void AudioCallbackStatic(void* userdata, unsigned char* stream, int len);
-		void AudioCallback(void* data, unsigned char *stream, int len);
+		static void AudioCallbackStatic(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount);
+		void AudioCallback(ma_device* pDevice, void* pOutput, ma_uint32 frameCount);
         void PlaySong(const char *filename, short loops);
 		void MuteChannel(unsigned char channel);
 		void SetChannelVolume(unsigned char channel, unsigned char volume);
@@ -34,6 +35,8 @@ class Synth
 		void SetChannelPan(char pan, char channel);
 		void SetMasterPan(char pan);
     private:
+		ma_device_config deviceConfig;
+		ma_device device;
         const char *filename;
 		short loopCount;
 		short loops;
