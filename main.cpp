@@ -1,5 +1,15 @@
 #include "synth.h"
-#include "minisdl_audio.h"
+#include <thread>
+#include <chrono>
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio.h"
+void SongDelay(int ms);
+
+void SongDelay(int ms) 
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
+
 int main(int argc, char **argv)
 {
 	if(argc < 3){
@@ -11,7 +21,7 @@ int main(int argc, char **argv)
 	{
 		Synth synth(argv[1]);
 		synth.PlaySong(argv[2],0);
-		while (!synth.HasFileEnded()) SDL_Delay(100);
+		while (!synth.HasFileEnded()) SongDelay(250);
 	}
 	return 0;
 }

@@ -8,6 +8,8 @@
 #include <iostream>
 #include <cstring>
 
+#include "miniaudio.h"
+
 int CaseStrCmp(const char* str1, const char* str2)
 {
     while (*str1 && *str2) 
